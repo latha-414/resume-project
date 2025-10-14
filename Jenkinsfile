@@ -4,7 +4,7 @@ pipeline {
     environment {
         AWS_REGION = 'ap-south-1'
         APP_NAME   = 'student'
-        AWS_CREDENTIALS = 'aws-creds'
+        AWS_CREDS  = 'aws-creds'
         GITHUB_CREDS = 'github-creds'
     }
 
@@ -18,16 +18,14 @@ pipeline {
         stage('Build & Push Backend Docker') {
             steps {
                 script {
-                    docker.image('amazonlinux:2').inside('-v /var/run/docker.sock:/var/run/docker.sock') {
-                        sh '''
-                        yum install -y docker awscli
-                        service docker start
-                        BACKEND_ECR=$(aws ecr describe-repositories --repository-names ${APP_NAME}-backend --region ${AWS_REGION} --query 'repositories[0].repositoryUri' --output text)
-                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin $BACKEND_ECR
-                        docker build -t $BACKEND_ECR:latest ./backend
-                        docker push $BACKEND_ECR:latest
-                        '''
-                    }
+                    sh '''
+                    docker run --rm -v /var/lib/jenkins/workspace/resume:/workspace -w /workspace amazon/aws-cli:latest bash -c "
+                    BACKEND_ECR=\$(aws ecr describe-repositories --repository-names ${APP_NAME}-backend --region ${AWS_REGION} --query 'repositories[0].repositoryUri' --output text)
+                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin \$BACKEND_ECR
+                    docker build -t \$BACKEND_ECR:latest ./backend
+                    docker push \$BACKEND_ECR:latest
+                    "
+                    '''
                 }
             }
         }
@@ -35,16 +33,14 @@ pipeline {
         stage('Build & Push Frontend Docker') {
             steps {
                 script {
-                    docker.image('amazonlinux:2').inside('-v /var/run/docker.sock:/var/run/docker.sock') {
-                        sh '''
-                        yum install -y docker awscli
-                        service docker start
-                        FRONTEND_ECR=$(aws ecr describe-repositories --repository-names ${APP_NAME}-frontend --region ${AWS_REGION} --query 'repositories[0].repositoryUri' --output text)
-                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin $FRONTEND_ECR
-                        docker build -t $FRONTEND_ECR:latest ./frontend
-                        docker push $FRONTEND_ECR:latest
-                        '''
-                    }
+                    sh '''
+                    docker run --rm -v /var/lib/jenkins/workspace/resume:/workspace -w /workspace amazon/aws-cli:latest bash -c "
+                    FRONTEND_ECR=\$(aws ecr describe-repositories --repository-names ${APP_NAME}-frontend --region ${AWS_REGION} --query 'repositories[0].repositoryUri' --output text)
+                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin \$FRONTEND_ECR
+                    docker build -t \$FRONTEND_ECR:latest ./frontend
+                    docker push \$FRONTEND_ECR:latest
+                    "
+                    '''
                 }
             }
         }
@@ -52,12 +48,12 @@ pipeline {
         stage('Deploy with Terraform') {
             steps {
                 script {
-                    docker.image('hashicorp/terraform:1.7.6').inside {
-                        dir('terraform') {
-                            sh 'terraform init'
-                            sh 'terraform apply -auto-approve'
-                        }
-                    }
+                    sh '''
+                    docker run --rm -v /var/lib/jenkins/workspace/resume/terraform:/workspace -w /workspace hashicorp/terraform:1.7.6 bash -c "
+                    terraform init
+                    terraform apply -auto-approve
+                    "
+                    '''
                 }
             }
         }
