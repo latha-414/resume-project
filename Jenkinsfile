@@ -2,60 +2,77 @@ pipeline {
     agent any
 
     environment {
-        AWS_REGION = 'ap-south-1'
-        APP_NAME   = 'student'
-        AWS_CREDS  = 'aws-creds'
-        GITHUB_CREDS = 'github-creds'
+        AWS_REGION = 'us-east-1'
+        APP_NAME   = 'myapp'
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                git branch: 'main', credentialsId: "${GITHUB_CREDS}", url: 'https://github.com/latha-414/resume-project.git'
+                checkout scm
             }
         }
 
-        stage('Build & Push Backend Docker') {
+        stage('Login to ECR') {
             steps {
-                script {
-                    sh '''
-                    docker run --rm -v /var/lib/jenkins/workspace/resume:/workspace -w /workspace amazon/aws-cli:latest bash -c "
-                    BACKEND_ECR=\$(aws ecr describe-repositories --repository-names ${APP_NAME}-backend --region ${AWS_REGION} --query 'repositories[0].repositoryUri' --output text)
-                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin \$BACKEND_ECR
-                    docker build -t \$BACKEND_ECR:latest ./backend
-                    docker push \$BACKEND_ECR:latest
-                    "
-                    '''
+                // Use the AWS Credentials stored in Jenkins
+                withAWS(credentials: 'aws-credentials', region: "${AWS_REGION}") {
+                    sh """
+                        AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                        docker login --username AWS --password $(aws ecr get-login-password --region $AWS_REGION) $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+                        echo "Logged into ECR"
+                    """
                 }
             }
         }
 
-        stage('Build & Push Frontend Docker') {
+        stage('Build & Push Backend') {
             steps {
-                script {
-                    sh '''
-                    docker run --rm -v /var/lib/jenkins/workspace/resume:/workspace -w /workspace amazon/aws-cli:latest bash -c "
-                    FRONTEND_ECR=\$(aws ecr describe-repositories --repository-names ${APP_NAME}-frontend --region ${AWS_REGION} --query 'repositories[0].repositoryUri' --output text)
-                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin \$FRONTEND_ECR
-                    docker build -t \$FRONTEND_ECR:latest ./frontend
-                    docker push \$FRONTEND_ECR:latest
-                    "
-                    '''
+                dir('backend') {
+                    withAWS(credentials: 'aws-credentials', region: "${AWS_REGION}") {
+                        sh """
+                            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                            docker build -t ${APP_NAME}-backend .
+                            docker tag ${APP_NAME}-backend $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${APP_NAME}-backend:latest
+                            docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${APP_NAME}-backend:latest
+                        """
+                    }
                 }
             }
         }
 
-        stage('Deploy with Terraform') {
+        stage('Build & Push Frontend') {
             steps {
-                script {
-                    sh '''
-                    docker run --rm -v /var/lib/jenkins/workspace/resume/terraform:/workspace -w /workspace hashicorp/terraform:1.7.6 bash -c "
-                    terraform init
-                    terraform apply -auto-approve
-                    "
-                    '''
+                dir('frontend') {
+                    withAWS(credentials: 'aws-credentials', region: "${AWS_REGION}") {
+                        sh """
+                            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                            docker build -t ${APP_NAME}-frontend .
+                            docker tag ${APP_NAME}-frontend $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${APP_NAME}-frontend:latest
+                            docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${APP_NAME}-frontend:latest
+                        """
+                    }
                 }
             }
+        }
+
+        stage('Update ECS Services') {
+            steps {
+                withAWS(credentials: 'aws-credentials', region: "${AWS_REGION}") {
+                    sh """
+                        AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                        aws ecs update-service --cluster ${APP_NAME}-cluster --service ${APP_NAME}-backend-service --force-new-deployment --region $AWS_REGION
+                        aws ecs update-service --cluster ${APP_NAME}-cluster --service ${APP_NAME}-frontend-service --force-new-deployment --region $AWS_REGION
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker system prune -f'
         }
     }
 }
