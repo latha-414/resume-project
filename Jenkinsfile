@@ -9,47 +9,37 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', credentialsId: 'github-creds', url: 'https://github.com/latha-414/resume-project.git'
-            }
-        }
-
-        stage('Get ECR Repository URIs') {
-            steps {
-                script {
-                    ECR_BACKEND = sh(
-                        script: "aws ecr describe-repositories --repository-names ${APP_NAME}-backend --region ${AWS_REGION} --query 'repositories[0].repositoryUri' --output text",
-                        returnStdout: true
-                    ).trim()
-
-                    ECR_FRONTEND = sh(
-                        script: "aws ecr describe-repositories --repository-names ${APP_NAME}-frontend --region ${AWS_REGION} --query 'repositories[0].repositoryUri' --output text",
-                        returnStdout: true
-                    ).trim()
-
-                    echo "Backend ECR URI: ${ECR_BACKEND}"
-                    echo "Frontend ECR URI: ${ECR_FRONTEND}"
-                }
-            }
-        }
-
-        stage('Login to ECR') {
-            steps {
-                sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_BACKEND}"
-                sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_FRONTEND}"
+                git credentialsId: 'github-creds', url: 'https://github.com/latha-414/resume-project.git'
             }
         }
 
         stage('Build & Push Backend Docker') {
             steps {
-                sh "docker build -t ${ECR_BACKEND}:latest ./backend"
-                sh "docker push ${ECR_BACKEND}:latest"
+                script {
+                    sh """
+                    docker run --rm -v \$PWD:/workspace -w /workspace amazon/aws-cli:latest \
+                    bash -c '
+                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin \$(aws ecr describe-repositories --repository-names ${APP_NAME}-backend --region ${AWS_REGION} --query repositories[0].repositoryUri --output text)
+                        docker build -t \$(aws ecr describe-repositories --repository-names ${APP_NAME}-backend --region ${AWS_REGION} --query repositories[0].repositoryUri --output text):latest ./backend
+                        docker push \$(aws ecr describe-repositories --repository-names ${APP_NAME}-backend --region ${AWS_REGION} --query repositories[0].repositoryUri --output text):latest
+                    '
+                    """
+                }
             }
         }
 
         stage('Build & Push Frontend Docker') {
             steps {
-                sh "docker build -t ${ECR_FRONTEND}:latest ./frontend"
-                sh "docker push ${ECR_FRONTEND}:latest"
+                script {
+                    sh """
+                    docker run --rm -v \$PWD:/workspace -w /workspace amazon/aws-cli:latest \
+                    bash -c '
+                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin \$(aws ecr describe-repositories --repository-names ${APP_NAME}-frontend --region ${AWS_REGION} --query repositories[0].repositoryUri --output text)
+                        docker build -t \$(aws ecr describe-repositories --repository-names ${APP_NAME}-frontend --region ${AWS_REGION} --query repositories[0].repositoryUri --output text):latest ./frontend
+                        docker push \$(aws ecr describe-repositories --repository-names ${APP_NAME}-frontend --region ${AWS_REGION} --query repositories[0].repositoryUri --output text):latest
+                    '
+                    """
+                }
             }
         }
 
