@@ -13,30 +13,30 @@ pipeline {
             }
         }
 
-        stage('Login to ECR') {
+        stage('Login to ECR & Build Images') {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
                     script {
                         // Get AWS Account ID
                         def accountId = sh(script: "aws sts get-caller-identity --query Account --output text", returnStdout: true).trim()
-                        
+
                         // Login to ECR
                         sh """
-                            aws ecr get-login-password --region $AWS_REGION | \
-                            docker login --username AWS --password-stdin ${accountId}.dkr.ecr.$AWS_REGION.amazonaws.com
+                            aws ecr get-login-password --region ${AWS_REGION} | \
+                            docker login --username AWS --password-stdin ${accountId}.dkr.ecr.${AWS_REGION}.amazonaws.com
                         """
 
-                        // Define local ECR URLs
-                        def ecrBackend  = "${accountId}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-backend"
-                        def ecrFrontend = "${accountId}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-frontend"
+                        // Use concatenation to avoid Groovy sandbox issue
+                        def ecrBackend  = accountId + ".dkr.ecr." + AWS_REGION + ".amazonaws.com/" + APP_NAME + "-backend"
+                        def ecrFrontend = accountId + ".dkr.ecr." + AWS_REGION + ".amazonaws.com/" + APP_NAME + "-frontend"
 
                         // Build & Push Backend
                         dir('backend') {
                             def commitId = sh(script: "git rev-parse HEAD", returnStdout: true).trim().take(7)
                             sh """
-                                docker build -t ${APP_NAME}-backend:$commitId .
-                                docker tag ${APP_NAME}-backend:$commitId $ecrBackend:$commitId
-                                docker push $ecrBackend:$commitId
+                                docker build -t ${APP_NAME}-backend:${commitId} .
+                                docker tag ${APP_NAME}-backend:${commitId} ${ecrBackend}:${commitId}
+                                docker push ${ecrBackend}:${commitId}
                             """
                         }
 
@@ -44,9 +44,9 @@ pipeline {
                         dir('frontend') {
                             def commitId = sh(script: "git rev-parse HEAD", returnStdout: true).trim().take(7)
                             sh """
-                                docker build -t ${APP_NAME}-frontend:$commitId .
-                                docker tag ${APP_NAME}-frontend:$commitId $ecrFrontend:$commitId
-                                docker push $ecrFrontend:$commitId
+                                docker build -t ${APP_NAME}-frontend:${commitId} .
+                                docker tag ${APP_NAME}-frontend:${commitId} ${ecrFrontend}:${commitId}
+                                docker push ${ecrFrontend}:${commitId}
                             """
                         }
                     }
