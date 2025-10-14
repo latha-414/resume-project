@@ -9,7 +9,7 @@ pipeline {
 
     stages {
         stage('Checkout') {
-            steps { git url: 'https://github.com/<your-repo>.git', branch: 'main' }
+            steps { git url: 'https://github.com/latha-414/resume-project.git', branch: 'main' }
         }
 
         stage('Build & Push Backend Docker') {
