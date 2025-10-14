@@ -2,77 +2,65 @@ pipeline {
     agent any
 
     environment {
-        AWS_REGION = 'ap-south-1'
-        APP_NAME   = 'myapp'
+        AWS_REGION      = 'ap-south-1'                     // change if needed
+        AWS_ACCOUNT_ID  = credentials('aws-creds')    // Jenkins credentials ID for AWS
+        APP_NAME        = 'student-app'
+        BACKEND_IMAGE   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-backend"
+        FRONTEND_IMAGE  = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-frontend"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
-            }
-        }
-
-        stage('Set AWS Credentials') {
-            steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
-                                  credentialsId: 'aws-creds']]) {
-                    sh '''
-                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
-                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
-                        AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-                        echo "Using AWS Account: $AWS_ACCOUNT_ID"
-                    '''
-                }
+                git branch: 'main', url: 'https://github.com/latha-414/resume-project.git'
             }
         }
 
         stage('Login to ECR') {
             steps {
-                sh '''
-                    docker login --username AWS --password $(aws ecr get-login-password --region $AWS_REGION) $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-                '''
+                sh """
+                    aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+                """
             }
         }
 
-        stage('Build & Push Backend') {
+        stage('Build & Push Backend Image') {
             steps {
                 dir('backend') {
-                    sh '''
-                        docker build -t ${APP_NAME}-backend .
-                        docker tag ${APP_NAME}-backend $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${APP_NAME}-backend:latest
-                        docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${APP_NAME}-backend:latest
-                    '''
+                    script {
+                        def backendTag = "${APP_NAME}-backend:${GIT_COMMIT.take(7)}"
+                        sh """
+                            docker build -t $backendTag .
+                            docker tag $backendTag $BACKEND_IMAGE:$backendTag
+                            docker push $BACKEND_IMAGE:$backendTag
+                        """
+                    }
                 }
             }
         }
 
-        stage('Build & Push Frontend') {
+        stage('Build & Push Frontend Image') {
             steps {
                 dir('frontend') {
-                    sh '''
-                        docker build -t ${APP_NAME}-frontend .
-                        docker tag ${APP_NAME}-frontend $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${APP_NAME}-frontend:latest
-                        docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${APP_NAME}-frontend:latest
-                    '''
+                    script {
+                        def frontendTag = "${APP_NAME}-frontend:${GIT_COMMIT.take(7)}"
+                        sh """
+                            docker build -t $frontendTag .
+                            docker tag $frontendTag $FRONTEND_IMAGE:$frontendTag
+                            docker push $FRONTEND_IMAGE:$frontendTag
+                        """
+                    }
                 }
-            }
-        }
-
-        stage('Update ECS Services') {
-            steps {
-                sh '''
-                    aws ecs update-service --cluster ${APP_NAME}-cluster --service ${APP_NAME}-backend-service --force-new-deployment --region $AWS_REGION
-                    aws ecs update-service --cluster ${APP_NAME}-cluster --service ${APP_NAME}-frontend-service --force-new-deployment --region $AWS_REGION
-                '''
             }
         }
     }
 
     post {
-        always {
-            echo 'Cleaning up Docker images...'
-            sh 'docker system prune -f'
+        success {
+            echo 'Docker images built and pushed to ECR successfully!'
+        }
+        failure {
+            echo 'Build or push failed.'
         }
     }
 }
