@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         AWS_REGION = 'ap-south-1'
-        APP_NAME   = 'student-app'
+        APP_NAME   = 'student-management-app'
     }
 
     stages {
