@@ -17,18 +17,21 @@ pipeline {
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
                     script {
-                        // Get AWS account ID dynamically
                         def accountId = sh(script: "aws sts get-caller-identity --query Account --output text", returnStdout: true).trim()
-
+                        
                         // Login to ECR
                         sh """
                             aws ecr get-login-password --region $AWS_REGION | \
                             docker login --username AWS --password-stdin ${accountId}.dkr.ecr.$AWS_REGION.amazonaws.com
                         """
 
-                        // Save ECR URLs to env variables for later stages
-                        env.ECR_BACKEND  = "${accountId}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-backend"
-                        env.ECR_FRONTEND = "${accountId}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-frontend"
+                        // Save to local variables instead of env
+                        def ecrBackend  = "${accountId}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-backend"
+                        def ecrFrontend = "${accountId}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-frontend"
+
+                        // Store in env if needed for later stages
+                        env.ECR_BACKEND = ecrBackend
+                        env.ECR_FRONTEND = ecrFrontend
                     }
                 }
             }
@@ -38,13 +41,10 @@ pipeline {
             steps {
                 dir('backend') {
                     script {
-                        // Get commit hash
                         def commitId = sh(script: "git rev-parse HEAD", returnStdout: true).trim().take(7)
-                        def backendTag = "${APP_NAME}-backend:${commitId}"
-
                         sh """
-                            docker build -t $backendTag .
-                            docker tag $backendTag $ECR_BACKEND:$commitId
+                            docker build -t ${APP_NAME}-backend:$commitId .
+                            docker tag ${APP_NAME}-backend:$commitId $ECR_BACKEND:$commitId
                             docker push $ECR_BACKEND:$commitId
                         """
                     }
@@ -56,13 +56,10 @@ pipeline {
             steps {
                 dir('frontend') {
                     script {
-                        // Get commit hash
                         def commitId = sh(script: "git rev-parse HEAD", returnStdout: true).trim().take(7)
-                        def frontendTag = "${APP_NAME}-frontend:${commitId}"
-
                         sh """
-                            docker build -t $frontendTag .
-                            docker tag $frontendTag $ECR_FRONTEND:$commitId
+                            docker build -t ${APP_NAME}-frontend:$commitId .
+                            docker tag ${APP_NAME}-frontend:$commitId $ECR_FRONTEND:$commitId
                             docker push $ECR_FRONTEND:$commitId
                         """
                     }
