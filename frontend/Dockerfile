@@ -7,13 +7,17 @@ WORKDIR /app
 # Copy package.json and package-lock.json first to leverage Docker cache
 COPY package.json package-lock.json ./
 
-# Clean npm cache forcefully and install dependencies
-RUN npm cache clean --force && npm ci --legacy-peer-deps
+# Update npm to latest version to avoid known bugs and clean npm cache to avoid corrupted packages
+RUN npm install -g npm@latest
+RUN npm cache clean --force
 
-# Copy the rest of the application source code
+# Install dependencies exactly as per package-lock.json while ignoring peer dependency conflicts
+RUN npm ci --legacy-peer-deps
+
+# Copy the rest of the frontend source code
 COPY . .
 
-# Expose the port your app runs on (3000 for React)
+# Expose the React app port
 EXPOSE 3000
 
 # Start the React app
