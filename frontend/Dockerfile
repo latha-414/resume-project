@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package.json ./
 
 # Install dependencies, ignoring peer dependency conflicts, without package-lock.json
-RUN npm install --legacy-peer-deps
+RUN npm cache clean --force && npm install
 
 # Copy the rest of the frontend source code
 COPY . .
