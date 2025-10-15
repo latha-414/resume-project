@@ -3,20 +3,26 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Copy only dependency files first for caching
+# Copy only package.json (and package-lock.json if you have it)
 COPY package*.json ./
 
-# Faster, reproducible install
-RUN npm ci --legacy-peer-deps
+# Install dependencies
+RUN npm install --legacy-peer-deps
 
-# Copy remaining source code
+# Copy rest of the code
 COPY . .
 
-# Stage 2: Run app
-FROM node:20-slim
+# Optional: build for production (creates /app/build folder)
+RUN npm run build
 
-WORKDIR /app
-COPY --from=builder /app .
+# Stage 2: Serve with Nginx
+FROM nginx:alpine
 
-EXPOSE 3000
-CMD ["npm", "start"]
+# Copy built files from previous stage
+COPY --from=builder /app/build /usr/share/nginx/html
+
+# Expose port 80 for Nginx
+EXPOSE 80
+
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]
