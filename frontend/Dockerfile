@@ -1,28 +1,29 @@
-# Stage 1: Build dependencies
-FROM node:20-slim AS builder
+# Stage 1: Build
+FROM node:20 AS builder
 
 WORKDIR /app
 
-# Copy only package.json (and package-lock.json if you have it)
-COPY package*.json ./
+# Copy package.json and package-lock.json first (cache npm install)
+COPY package.json package-lock.json ./
 
-# Install dependencies
-RUN npm install --legacy-peer-deps
+# Install dependencies exactly as per package-lock.json
+RUN npm ci --legacy-peer-deps
 
-# Copy rest of the code
+# Copy the rest of the source code
 COPY . .
 
-# Optional: build for production (creates /app/build folder)
-RUN npm run build
+# Optional: build the app if you want static files
+# RUN npm run build
 
-# Stage 2: Serve with Nginx
-FROM nginx:alpine
+# Stage 2: Runtime
+FROM node:20
 
-# Copy built files from previous stage
-COPY --from=builder /app/build /usr/share/nginx/html
+WORKDIR /app
 
-# Expose port 80 for Nginx
-EXPOSE 80
+# Copy everything from builder
+COPY --from=builder /app .
 
-# Start Nginx
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 3000
+
+# Start the app
+CMD ["npm", "start"]
