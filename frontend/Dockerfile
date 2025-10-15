@@ -1,29 +1,20 @@
-# Stage 1: Build
-FROM node:20 AS builder
-
-WORKDIR /app
-
-# Copy package.json and package-lock.json first (cache npm install)
-COPY package.json package-lock.json ./
-
-# Install dependencies exactly as per package-lock.json
-RUN npm ci --legacy-peer-deps
-
-# Copy the rest of the source code
-COPY . .
-
-# Optional: build the app if you want static files
-# RUN npm run build
-
-# Stage 2: Runtime
+# Use official Node.js 20 image as base
 FROM node:20
 
+# Set working directory inside container
 WORKDIR /app
 
-# Copy everything from builder
-COPY --from=builder /app .
+# Copy package.json and package-lock.json first to leverage Docker cache
+COPY package.json package-lock.json ./
 
+# Clean npm cache forcefully and install dependencies
+RUN npm cache clean --force && npm ci --legacy-peer-deps
+
+# Copy the rest of the application source code
+COPY . .
+
+# Expose the port your app runs on (3000 for React)
 EXPOSE 3000
 
-# Start the app
+# Start the React app
 CMD ["npm", "start"]
