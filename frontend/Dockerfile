@@ -1,15 +1,22 @@
-FROM node:20 AS builder
+# Stage 1: Build dependencies
+FROM node:20-slim AS builder
 
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-# Optional if you have a build step (React/Vue/Angular)
-# RUN npm run build
 
-# Runtime stage (if building a static site)
-FROM node:20
+# Copy only dependency files first for caching
+COPY package*.json ./
+
+# Faster, reproducible install
+RUN npm ci --legacy-peer-deps
+
+# Copy remaining source code
+COPY . .
+
+# Stage 2: Run app
+FROM node:20-slim
+
 WORKDIR /app
 COPY --from=builder /app .
+
 EXPOSE 3000
 CMD ["npm", "start"]
